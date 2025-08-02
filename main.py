@@ -127,22 +127,36 @@ class HimanshuJobAutomator:
         
         for location in locations[:3]:  # Limit to 3 locations per portal
             try:
+                # Build search URL
                 search_url = portal_config['search_url'].format(
                     keywords=quote_plus(keywords),
                     location=quote_plus(location)
                 )
                 
                 logger.info(f"Searching {portal_name} in {location}")
-                self.driver.get(search_url)
-                time.sleep(5)
                 
-                # Get job links based on portal
+                # Get job links based on portal with enhanced methods
                 if 'linkedin' in portal_name.lower() and self.linkedin_scraper:
-                    job_links = self.linkedin_scraper.get_job_links()
+                    # Use enhanced LinkedIn search with rate limiting
+                    job_links = self.linkedin_scraper.search_jobs_with_rate_limiting(
+                        query=keywords,
+                        location=location,
+                        date_posted="past-week"
+                    )
                 elif 'naukri' in portal_name.lower() and self.naukri_scraper:
-                    job_links = self.naukri_scraper.get_job_links()
+                    # Use enhanced Naukri search with rate limiting
+                    job_links = self.naukri_scraper.search_jobs_with_rate_limiting(
+                        query=keywords,
+                        location=location,
+                        experience="0-5"
+                    )
                 elif self.linkedin_scraper:
-                    job_links = self.linkedin_scraper.get_job_links()  # Default to LinkedIn scraper
+                    # Default to enhanced LinkedIn scraper
+                    job_links = self.linkedin_scraper.search_jobs_with_rate_limiting(
+                        query=keywords,
+                        location=location,
+                        date_posted="past-week"
+                    )
                 else:
                     logger.warning(f"No suitable scraper available for {portal_name}")
                     job_links = []

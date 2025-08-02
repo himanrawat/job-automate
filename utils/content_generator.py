@@ -2,7 +2,7 @@
 AI-powered content generation for resumes and cover letters
 """
 
-import openai
+from openai import OpenAI
 import logging
 from config.api_keys import APIKeys
 from config.user_profile import HimanshuProfile
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class ContentGenerator:
     def __init__(self):
-        openai.api_key = APIKeys.OPENAI_API_KEY
+        self.client = OpenAI(api_key=APIKeys.OPENAI_API_KEY)
     
     def tailor_resume_for_frontend(self, job_details, region):
         """Generate tailored resume for frontend positions"""
@@ -49,8 +49,8 @@ class ContentGenerator:
             Keep the same structure but emphasize most relevant experiences and skills.
             """
             
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
+            response = self.client.chat.completions.create(
+                model="gpt-4o",  # Updated to GPT-4o for better cost/performance
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=1500,
                 temperature=0.7
@@ -117,8 +117,8 @@ class ContentGenerator:
             Make it specific to the role and show genuine excitement about frontend development opportunities.
             """
             
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
+            response = self.client.chat.completions.create(
+                model="gpt-4o",  # Updated to GPT-4o for better cost/performance
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=800,
                 temperature=0.8
@@ -162,8 +162,8 @@ class ContentGenerator:
             Tone: Direct and professional with enthusiasm for frontend development
             """
             
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
+            response = self.client.chat.completions.create(
+                model="gpt-4o",  # Updated to GPT-4o for better cost/performance
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=200,
                 temperature=0.8

@@ -1,90 +1,164 @@
 """
-Google Drive Document Management for Resumes and Cover Letters
+Cloud Document Management for Resumes and Cover Letters
+AWS S3 + GitHub Gist Hybrid Storage Solution
 """
 
-import tempfile
+import os
 import json
 import logging
 from datetime import datetime
-import gspread
-from google.oauth2.service_account import Credentials
+import requests
+import boto3
+from botocore.exceptions import NoCredentialsError, ClientError
 
 logger = logging.getLogger(__name__)
 
 class DocumentManager:
     def __init__(self):
-        self.setup_google_services()
+        self.setup_storage_services()
         
-    def setup_google_services(self):
-        """Setup Google Drive and Docs services"""
+    def setup_storage_services(self):
+        """Setup cloud storage services (S3 + GitHub Gist)"""
         try:
             from config.api_keys import APIKeys
             
-            # Create temporary file for credentials
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-                json.dump(APIKeys.GOOGLE_CREDENTIALS, f)
-                self.creds_path = f.name
+            # Detect environment
+            self.is_aws_environment = self._detect_aws_environment()
             
-            # Setup Google services
-            scope = [
-                'https://spreadsheets.google.com/feeds',
-                'https://www.googleapis.com/auth/drive',
-                'https://www.googleapis.com/auth/documents'
-            ]
+            # Setup S3 for AWS deployment
+            if self.is_aws_environment:
+                try:
+                    self.s3_client = boto3.client('s3')
+                    self.bucket_name = os.getenv('S3_BUCKET_NAME', 'himanshu-job-automation-docs')
+                    logger.info("AWS S3 setup completed")
+                except Exception as e:
+                    logger.warning(f"S3 setup failed, falling back to GitHub: {e}")
+                    self.is_aws_environment = False
             
-            self.creds = Credentials.from_service_account_file(self.creds_path, scopes=scope)
-            self.gc = gspread.authorize(self.creds)
+            # Setup GitHub Gist (fallback or development)
+            self.github_token = getattr(APIKeys, 'GITHUB_TOKEN', None)
+            self.github_api_url = "https://api.github.com/gists"
             
-            logger.info("Google services setup completed")
+            logger.info(f"Storage setup: AWS={self.is_aws_environment}, GitHub={'✓' if self.github_token else '✗'}")
             
         except Exception as e:
-            logger.error(f"Error setting up Google services: {e}")
+            logger.error(f"Error setting up storage services: {e}")
+    
+    def _detect_aws_environment(self):
+        """Detect if running in AWS environment"""
+        aws_indicators = [
+            os.getenv('AWS_EXECUTION_ENV'),
+            os.getenv('AWS_LAMBDA_FUNCTION_NAME'),
+            os.getenv('AWS_REGION'),
+            os.path.exists('/var/task'),  # Lambda indicator
+            os.path.exists('/opt/aws')     # EC2 indicator
+        ]
+        return any(aws_indicators)
     
     def create_resume_document(self, tailored_resume, job_details):
-        """Create and upload tailored resume to Google Docs"""
+        """Create and store tailored resume document"""
         try:
-            # This is a simplified version - you would use Google Docs API
-            # For now, we'll return a placeholder link
-            company_name = job_details.get('company', 'Company').replace(' ', '_')
-            job_title = job_details.get('title', 'Job').replace(' ', '_')
-            date_str = datetime.now().strftime('%Y%m%d')
+            company_name = job_details.get('company', 'Company').replace(' ', '_').replace('/', '_')
+            job_title = job_details.get('title', 'Job').replace(' ', '_').replace('/', '_')
+            date_str = datetime.now().strftime('%Y%m%d_%H%M')
             
-            doc_name = f"Resume_Himanshu_{company_name}_{job_title}_{date_str}"
+            filename = f"Resume_Himanshu_{company_name}_{job_title}_{date_str}"
             
-            # In production, you would:
-            # 1. Create Google Doc with tailored_resume content
-            # 2. Set sharing permissions
-            # 3. Return shareable link
-            
-            placeholder_link = f"https://docs.google.com/document/d/placeholder_resume_{company_name}"
-            logger.info(f"Resume document created: {doc_name}")
-            
-            return placeholder_link
+            # Try AWS S3 first, fallback to GitHub Gist
+            if self.is_aws_environment and hasattr(self, 's3_client'):
+                return self._upload_to_s3(tailored_resume, filename, 'resume')
+            else:
+                return self._create_github_gist(tailored_resume, filename, 'resume', job_details)
             
         except Exception as e:
             logger.error(f"Error creating resume document: {e}")
-            return "Resume document creation failed"
+            return f"Resume creation failed: {str(e)}"
     
     def create_cover_letter_document(self, cover_letter, job_details):
-        """Create and upload cover letter to Google Docs"""
+        """Create and store cover letter document"""
         try:
-            company_name = job_details.get('company', 'Company').replace(' ', '_')
-            job_title = job_details.get('title', 'Job').replace(' ', '_')
-            date_str = datetime.now().strftime('%Y%m%d')
+            company_name = job_details.get('company', 'Company').replace(' ', '_').replace('/', '_')
+            job_title = job_details.get('title', 'Job').replace(' ', '_').replace('/', '_')
+            date_str = datetime.now().strftime('%Y%m%d_%H%M')
             
-            doc_name = f"CoverLetter_Himanshu_{company_name}_{job_title}_{date_str}"
+            filename = f"CoverLetter_Himanshu_{company_name}_{job_title}_{date_str}"
             
-            # In production, you would:
-            # 1. Create Google Doc with cover_letter content
-            # 2. Format it professionally
-            # 3. Set sharing permissions
-            # 4. Return shareable link
-            
-            placeholder_link = f"https://docs.google.com/document/d/placeholder_cover_{company_name}"
-            logger.info(f"Cover letter document created: {doc_name}")
-            
-            return placeholder_link
+            # Try AWS S3 first, fallback to GitHub Gist
+            if self.is_aws_environment and hasattr(self, 's3_client'):
+                return self._upload_to_s3(cover_letter, filename, 'cover_letter')
+            else:
+                return self._create_github_gist(cover_letter, filename, 'cover_letter', job_details)
             
         except Exception as e:
             logger.error(f"Error creating cover letter document: {e}")
-            return "Cover letter document creation failed"
+            return f"Cover letter creation failed: {str(e)}"
+    
+    def _upload_to_s3(self, content, filename, doc_type):
+        """Upload document to AWS S3"""
+        try:
+            key = f"{doc_type}s/{filename}.txt"
+            
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=key,
+                Body=content.encode('utf-8'),
+                ContentType='text/plain',
+                ACL='public-read'  # Make publicly accessible
+            )
+            
+            # Return public URL
+            public_url = f"https://{self.bucket_name}.s3.amazonaws.com/{key}"
+            logger.info(f"Document uploaded to S3: {public_url}")
+            
+            return public_url
+            
+        except Exception as e:
+            logger.error(f"S3 upload failed: {e}")
+            # Fallback to GitHub Gist
+            return self._create_github_gist(content, filename, doc_type, {})
+    
+    def _create_github_gist(self, content, filename, doc_type, job_details):
+        """Create GitHub Gist as fallback storage"""
+        try:
+            if not self.github_token:
+                logger.warning("No GitHub token available")
+                return f"Document saved locally: {filename}.txt"
+            
+            # Prepare gist data
+            company = job_details.get('company', 'Company')
+            title = job_details.get('title', 'Position')
+            
+            gist_data = {
+                "description": f"{doc_type.title()} for {title} at {company} - Generated {datetime.now().strftime('%Y-%m-%d')}",
+                "public": True,  # Make it publicly accessible
+                "files": {
+                    f"{filename}.txt": {
+                        "content": content
+                    }
+                }
+            }
+            
+            # Create gist
+            headers = {
+                "Authorization": f"token {self.github_token}",
+                "Accept": "application/vnd.github.v3+json"
+            }
+            
+            response = requests.post(self.github_api_url, 
+                                   headers=headers, 
+                                   json=gist_data,
+                                   timeout=10)
+            
+            if response.status_code == 201:
+                gist_url = response.json().get('html_url')
+                raw_url = response.json().get('files', {}).get(f"{filename}.txt", {}).get('raw_url')
+                
+                logger.info(f"GitHub Gist created: {gist_url}")
+                return raw_url or gist_url  # Prefer raw URL for direct access
+            else:
+                logger.error(f"GitHub Gist creation failed: {response.status_code}")
+                return f"Document created but upload failed: {filename}.txt"
+            
+        except Exception as e:
+            logger.error(f"GitHub Gist creation failed: {e}")
+            return f"Document saved locally: {filename}.txt"

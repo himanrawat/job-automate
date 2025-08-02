@@ -35,9 +35,15 @@ class APIKeys:
             "universe_domain": os.getenv('GOOGLE_UNIVERSE_DOMAIN', 'googleapis.com')
         }
     
+    # Make GOOGLE_CREDENTIALS accessible as a class attribute
+    GOOGLE_CREDENTIALS = None  # Will be set after class definition
+    
     # LinkedIn API credentials (if needed)
     LINKEDIN_CLIENT_ID = os.getenv('LINKEDIN_CLIENT_ID')
     LINKEDIN_CLIENT_SECRET = os.getenv('LINKEDIN_CLIENT_SECRET')
+    
+    # GitHub token for Gist storage
+    GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
     
     # Other job site API keys (add as needed)
     NAUKRI_API_KEY = os.getenv('NAUKRI_API_KEY')
@@ -50,10 +56,14 @@ class APIKeys:
         if not APIKeys.OPENAI_API_KEY:
             missing_keys.append('OPENAI_API_KEY')
         
-        if not APIKeys.GOOGLE_CREDENTIALS.get('project_id'):
+        google_creds = APIKeys.GOOGLE_CREDENTIALS
+        if not google_creds or not google_creds.get('project_id'):
             missing_keys.append('GOOGLE_PROJECT_ID')
         
         if missing_keys:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_keys)}")
         
         return True
+
+# Set GOOGLE_CREDENTIALS as a class attribute after class definition
+APIKeys.GOOGLE_CREDENTIALS = APIKeys.get_google_credentials()
