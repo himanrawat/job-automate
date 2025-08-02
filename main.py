@@ -15,16 +15,16 @@ from utils.priority_calculator import PriorityCalculator
 from utils.content_generator import ContentGenerator
 from utils.document_manager import DocumentManager
 from utils.sheets_manager import SheetsManager
-from scrapers.linkedin_scraper import LinkedInScraper
-from scrapers.naukri_scraper import NaukriScraper
+from scrapers.apify_linkedin_scraper import ApifyJobScraper
+from utils.enhanced_application_processor import EnhancedApplicationProcessor
 from applications.application_handler import ApplicationHandler
 
-# Configure logging
+# Configure logging with UTF-8 encoding for Unicode support
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('himanshu_job_automation.log'),
+        logging.FileHandler('himanshu_job_automation.log', encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -39,24 +39,38 @@ class HimanshuJobAutomator:
         self.sheets_manager = SheetsManager()
         self.applications_today = 0
         self.driver = None
-        self.linkedin_scraper = None
-        self.naukri_scraper = None
+        self.apify_scraper = None
         self.application_handler = None
+        self.enhanced_processor = None
         
-        # Setup browser with error handling
+        # Initialize Apify scraper (doesn't need browser)
+        try:
+            self.apify_scraper = ApifyJobScraper()
+            logger.info("Apify job scraper initialized successfully")
+        except Exception as e:
+            logger.error(f"Error initializing Apify scraper: {e}")
+            self.apify_scraper = None
+        
+        # Setup browser with error handling (only for application handler)
         try:
             self.driver = self.browser_manager.setup_browser()
             if self.driver:
-                # Initialize scrapers only if browser is available
-                self.linkedin_scraper = LinkedInScraper(self.driver)
-                self.naukri_scraper = NaukriScraper(self.driver)
+                # Initialize application handler for automated applications
                 self.application_handler = ApplicationHandler(self.driver)
-                logger.info("All components initialized successfully")
+                logger.info("Application handler initialized successfully")
             else:
-                logger.error("Browser setup failed - scrapers will not be available")
+                logger.warning("Browser setup failed - applications will be manual only")
         except Exception as e:
-            logger.error(f"Error during initialization: {e}")
+            logger.error(f"Error during browser initialization: {e}")
             self.driver = None
+        
+        # Initialize enhanced application processor
+        try:
+            self.enhanced_processor = EnhancedApplicationProcessor(self.driver)
+            logger.info("Enhanced application processor initialized successfully")
+        except Exception as e:
+            logger.error(f"Error initializing enhanced processor: {e}")
+            self.enhanced_processor = None
         
     def get_regional_portals(self, region):
         """Get job portals for specific region"""
@@ -114,89 +128,8 @@ class HimanshuJobAutomator:
         }
         return portals.get(region, [])
     
-    def search_jobs_on_portal(self, portal_config, keywords, region):
-        """Search for jobs on specific portal"""
-        portal_name = portal_config['name']
-        locations = portal_config['locations']
-        all_job_links = []
-        
-        # Check if browser and scrapers are available
-        if not self.driver:
-            logger.error(f"Browser not available - skipping {portal_name}")
-            return []
-        
-        for location in locations[:3]:  # Limit to 3 locations per portal
-            try:
-                # Build search URL
-                search_url = portal_config['search_url'].format(
-                    keywords=quote_plus(keywords),
-                    location=quote_plus(location)
-                )
-                
-                logger.info(f"Searching {portal_name} in {location}")
-                
-                # Get job links based on portal with enhanced methods
-                if 'linkedin' in portal_name.lower() and self.linkedin_scraper:
-                    # Use enhanced LinkedIn search with rate limiting
-                    job_links = self.linkedin_scraper.search_jobs_with_rate_limiting(
-                        query=keywords,
-                        location=location,
-                        date_posted="past-week"
-                    )
-                elif 'naukri' in portal_name.lower() and self.naukri_scraper:
-                    # Use enhanced Naukri search with rate limiting
-                    job_links = self.naukri_scraper.search_jobs_with_rate_limiting(
-                        query=keywords,
-                        location=location,
-                        experience="0-5"
-                    )
-                elif self.linkedin_scraper:
-                    # Default to enhanced LinkedIn scraper
-                    job_links = self.linkedin_scraper.search_jobs_with_rate_limiting(
-                        query=keywords,
-                        location=location,
-                        date_posted="past-week"
-                    )
-                else:
-                    logger.warning(f"No suitable scraper available for {portal_name}")
-                    job_links = []
-                
-                all_job_links.extend(job_links[:JobPreferences.MAX_APPLICATIONS_PER_PORTAL//len(locations)])
-                time.sleep(10)
-                
-            except Exception as e:
-                logger.error(f"Error searching {portal_name} in {location}: {e}")
-                continue
-        
-        return all_job_links[:JobPreferences.MAX_APPLICATIONS_PER_PORTAL]
-    
-    def extract_job_details(self, job_url, portal_name, region):
-        """Extract job details using appropriate scraper"""
-        try:
-            if 'linkedin' in portal_name.lower():
-                job_details = self.linkedin_scraper.extract_job_details(job_url)
-            elif 'naukri' in portal_name.lower():
-                job_details = self.naukri_scraper.extract_job_details(job_url)
-            else:
-                job_details = self.linkedin_scraper.extract_job_details(job_url)
-            
-            if job_details:
-                job_details['region'] = region
-                
-                # Check if job is relevant and doesn't contain avoided keywords
-                if not self.linkedin_scraper.is_relevant_frontend_role(job_details.get('title', '')):
-                    logger.info(f"Skipping non-frontend role: {job_details.get('title', '')}")
-                    return None
-                    
-                if self.linkedin_scraper.contains_avoided_keywords(job_details.get('description', '')):
-                    logger.info(f"Skipping job with avoided keywords: {job_details.get('title', '')}")
-                    return None
-                    
-            return job_details
-            
-        except Exception as e:
-            logger.error(f"Error extracting job details from {job_url}: {e}")
-            return None
+    # Legacy methods removed - now using Apify for all job discovery
+    # Job details are provided directly from Apify response
     
     def process_single_job(self, job_url, portal_name, region):
         """Process a single job application"""
@@ -331,50 +264,7 @@ class HimanshuJobAutomator:
         else:
             return "Full-time"
     
-    def process_region(self, region, region_config):
-        """Process all jobs for a specific region"""
-        logger.info(f"🌍 Processing {region} for Himanshu Rawat")
-        
-        # Create region worksheet
-        self.sheets_manager.create_region_worksheet(region)
-        
-        portals = self.get_regional_portals(region)
-        keywords = region_config['keywords']
-        region_applications = []
-        
-        for portal_config in portals:
-            try:
-                if self.applications_today >= JobPreferences.MAX_APPLICATIONS_PER_DAY:
-                    logger.info("📊 Daily application limit reached")
-                    break
-                    
-                logger.info(f"🔍 Processing {portal_config['name']} for {region}")
-                
-                # Search for jobs
-                job_links = self.search_jobs_on_portal(portal_config, keywords, region)
-                
-                for job_url in job_links:
-                    if self.applications_today >= JobPreferences.MAX_APPLICATIONS_PER_DAY:
-                        break
-                    
-                    # Process individual job
-                    application_data = self.process_single_job(job_url, portal_config['name'], region)
-                    
-                    if application_data:
-                        region_applications.append(application_data)
-                    
-                    # Add delay between applications (human-like behavior)
-                    time.sleep(45)
-                
-                # Add delay between portals
-                time.sleep(120)
-                
-            except Exception as e:
-                logger.error(f"Error processing {portal_config['name']} for {region}: {e}")
-                continue
-        
-        logger.info(f"✅ Completed {region}: {len(region_applications)} applications processed")
-        return region_applications
+    # Legacy region processing removed - now using Apify for all job discovery
     
     def generate_daily_summary(self, all_applications):
         """Generate daily summary report"""
@@ -421,30 +311,162 @@ Focus on the high priority manual applications first.
         except Exception as e:
             logger.error(f"Error generating daily summary: {e}")
     
+    def discover_jobs_with_apify(self, region_config=None, max_jobs=50, platforms=['linkedin']):
+        """
+        Use Apify Job Scrapers for intelligent job discovery across multiple platforms
+        This is the primary method for finding jobs at scale
+        """
+        if not self.apify_scraper:
+            logger.error("Apify scraper not available")
+            return []
+        
+        try:
+            logger.info(f"🔍 Starting job discovery with Apify across platforms: {platforms}")
+            
+            # Use region-specific preferences if provided
+            if region_config:
+                keywords = region_config.get('keywords', '').split(' OR ')
+                locations = region_config.get('locations', [])
+            else:
+                # Use default job preferences
+                keywords = self.apify_scraper.job_preferences.job_titles
+                locations = self.apify_scraper.job_preferences.locations
+            
+            # Search across multiple platforms
+            jobs = self.apify_scraper.search_multiple_platforms(
+                platforms=platforms,
+                keywords=keywords,
+                locations=locations[:2],  # Limit to 2 locations to manage costs
+                max_jobs_per_platform=max_jobs // len(platforms)
+            )
+            
+            logger.info(f"✅ Discovered {len(jobs)} jobs using Apify across {platforms}")
+            
+            # Convert Apify job format to your system's format
+            converted_jobs = []
+            for job in jobs:
+                converted_job = {
+                    'url': job['url'],
+                    'title': job['title'],
+                    'company': job['company'],
+                    'location': job['location'],
+                    'description': job['description'],
+                    'priority_score': job.get('priority_score', 0),
+                    'source': job['source'],
+                    'platform': job['platform'],
+                    'scraped_at': job['scraped_at'],
+                    'salary': job.get('salary', ''),
+                    'experience_level': job.get('experience_level', ''),
+                    'raw_apify_data': job.get('raw_data', {})
+                }
+                converted_jobs.append(converted_job)
+            
+            return converted_jobs
+            
+        except Exception as e:
+            logger.error(f"Error in Apify job discovery: {e}")
+            return []
+    
+    def search_target_companies_with_apify(self, company_list=None):
+        """
+        Search for jobs at specific target companies using Apify
+        """
+        if not self.apify_scraper:
+            logger.error("Apify scraper not available")
+            return []
+        
+        if not company_list:
+            # Use default target companies
+            company_list = (JobPreferences.TOP_STARTUPS + 
+                          JobPreferences.ESTABLISHED_GOOD_COMPANIES)[:10]  # Limit to 10 companies
+        
+        try:
+            logger.info(f"🎯 Searching jobs at target companies: {company_list}")
+            
+            jobs = self.apify_scraper.search_specific_companies(
+                company_names=company_list,
+                keywords=['Frontend Developer', 'React Developer', 'JavaScript Developer'],
+                max_jobs_per_company=5
+            )
+            
+            logger.info(f"✅ Found {len(jobs)} jobs at target companies")
+            return jobs
+            
+        except Exception as e:
+            logger.error(f"Error searching target companies with Apify: {e}")
+            return []
+
     def run_automation(self):
-        """Main automation execution"""
-        logger.info("🚀 Starting Himanshu Rawat's Frontend Developer Job Automation")
+        """
+        Main automation execution with Apify-powered job discovery
+        """
+        logger.info("STARTING: Himanshu Rawat's Advanced Job Automation with Apify")
         
         all_applications = []
-        region_order = ['INDIA', 'USA', 'AUSTRALIA', 'UNITED_KINGDOM', 'EUROPE']
         
-        for region in region_order:
-            if region in JobPreferences.REGIONS:
+        try:
+            # Phase 1: High-volume job discovery with Apify
+            logger.info("PHASE 1: Discovering jobs with Apify Multi-Platform Scraper")
+            
+            apify_jobs = []
+            
+            # Discover general jobs across platforms (LinkedIn + Indeed + German Jobs)
+            available_platforms = ['linkedin', 'indeed', 'german_jobs']  # Multi-platform including German market
+            general_jobs = self.discover_jobs_with_apify(
+                max_jobs=30, 
+                platforms=available_platforms
+            )
+            apify_jobs.extend(general_jobs)
+            
+            # Specific German job market search if rate limits allow
+            if self.apify_scraper and self.apify_scraper._check_rate_limits():
+                logger.info("🇩🇪 Searching German job market...")
+                german_jobs = self.apify_scraper.search_german_jobs(
+                    keywords=["Frontend Entwickler", "UI Entwickler", "React Entwickler"],
+                    locations=["Berlin", "München", "Hamburg"],
+                    max_jobs=15
+                )
+                apify_jobs.extend(german_jobs)
+                logger.info(f"✅ Found {len(german_jobs)} German jobs")
+            
+            # Search target companies if rate limits allow
+            if self.apify_scraper and self.apify_scraper._check_rate_limits():
+                target_company_jobs = self.search_target_companies_with_apify()
+                apify_jobs.extend(target_company_jobs)
+            
+            logger.info(f"✅ Apify discovered {len(apify_jobs)} total jobs")
+            
+            # Phase 2: Process discovered jobs for applications
+            logger.info("PHASE 2: Processing applications for discovered jobs")
+            
+            for job in apify_jobs[:JobPreferences.MAX_APPLICATIONS_PER_DAY]:
+                if self.applications_today >= JobPreferences.MAX_APPLICATIONS_PER_DAY:
+                    logger.info("Daily application limit reached")
+                    break
+                
                 try:
-                    applications = self.process_region(region, JobPreferences.REGIONS[region])
-                    all_applications.extend(applications)
+                    # Process job application
+                    application_result = self.process_apify_job_application(job)
                     
-                    # Break if daily limit reached
-                    if self.applications_today >= JobPreferences.MAX_APPLICATIONS_PER_DAY:
-                        break
-                    
-                    # Add delay between regions
-                    if region != region_order[-1]:
-                        time.sleep(300)  # 5 minutes
+                    if application_result:
+                        all_applications.append(application_result)
+                        self.applications_today += 1
                         
+                        # Log to sheets/CSV
+                        self.sheets_manager.log_application(job, application_result)
+                        
+                        logger.info(f"✅ Applied to {job['title']} at {job['company']} "
+                                  f"(Priority: {job.get('priority_score', 'N/A')})")
+                    
+                    # Rate limiting between applications
+                    time.sleep(30)  # 30 seconds between applications
+                    
                 except Exception as e:
-                    logger.error(f"Error processing {region}: {e}")
+                    logger.error(f"Error processing job application: {e}")
                     continue
+            
+        except Exception as e:
+            logger.error(f"Error in main automation: {e}")
         
         # Generate summary and dashboard
         self.generate_daily_summary(all_applications)
@@ -453,9 +475,43 @@ Focus on the high priority manual applications first.
         logger.info(f"📊 Spreadsheet: {self.sheets_manager.spreadsheet.url}")
         
         # Cleanup
-        self.browser_manager.close_browser()
+        if self.driver:
+            self.browser_manager.close_browser()
         
         return all_applications
+    
+    def process_apify_job_application(self, job):
+        """
+        Process a job application for a job discovered via Apify using enhanced processor
+        """
+        try:
+            if not self.enhanced_processor:
+                logger.error("Enhanced processor not available")
+                return None
+            
+            # Use enhanced processor for complete application handling
+            result = self.enhanced_processor.process_apify_job_application(
+                job_data=job,
+                automation_mode=True  # Enable automation if browser is available
+            )
+            
+            logger.info(f"✅ Enhanced application processing complete for {job.get('title')} at {job.get('company')}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in enhanced application processing: {e}")
+            
+            # Fallback to basic processing
+            return {
+                'job_info': {
+                    'title': job.get('title', 'Unknown'),
+                    'company': job.get('company', 'Unknown'),
+                    'platform': job.get('platform', 'Unknown')
+                },
+                'status': 'processing_failed',
+                'error': str(e),
+                'fallback': 'Manual application required'
+            }
 
 # Run the automation
 if __name__ == "__main__":

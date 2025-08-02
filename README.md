@@ -1,19 +1,27 @@
 # Himanshu Rawat's Job Application Automation
 
-🚀 **Automated job application system with intelligent prioritization and comprehensive tracking**
+🚀 **Automated job application system powered by Apify LinkedIn Jobs Scraper with intelligent prioritization and comprehensive tracking**
 
 ## ✨ Features
 
-- **Multi-Portal Job Search**: LinkedIn, Naukri, Indeed across multiple regions
+- **Professional Job Discovery**: Powered by Apify LinkedIn Jobs Scraper for reliable, large-scale job discovery
 - **Intelligent Application**: Automated form filling with manual fallback
-- **Smart Prioritization**: AI-powered job matching and priority scoring
+- **Smart Prioritization**: AI-powered job matching and priority scoring  
 - **Comprehensive Tracking**: Google Sheets integration with CSV fallback
 - **Document Generation**: Custom resumes and cover letters for each application
-- **Regional Support**: India, USA, Australia, UK, Europe job markets
+- **Global Reach**: Support for multiple countries and regions
+- **Cost-Effective**: Efficient API usage with built-in rate limiting
 
-## 🚨 Latest Updates & Fixes
+## 🚨 Latest Updates & Major Changes
 
-### ✅ Issues Resolved
+### ✅ Major Upgrade: Apify Integration
+- 🔥 **NEW**: Integrated Apify LinkedIn Jobs Scraper for professional-grade job discovery
+- ✅ **Removed**: Traditional LinkedIn and Naukri scrapers (replaced by Apify)
+- ✅ **Enhanced**: Intelligent job filtering and priority scoring
+- ✅ **Reliable**: No more bot detection issues or rate limiting problems
+- ✅ **Scalable**: Discover thousands of jobs quickly and efficiently
+
+### ✅ Previous Fixes
 - ✅ **Google API Key Formatting** - Fixed "Incorrect padding" errors
 - ✅ **ChromeDriver Auto-Management** - Automatic driver download and setup
 - ✅ **Browser Compatibility** - Enhanced Chrome detection and configuration
@@ -21,10 +29,11 @@
 - ✅ **Error Handling** - Robust error handling for all components
 
 ### 🔧 Current Status
+- **Apify LinkedIn Scraper**: ✅ Active and working
 - **Google Credentials**: ✅ Working
-- **Browser Setup**: ✅ Working (ChromeDriver auto-downloaded)
-- **Google Sheets**: ⚠️ Limited (Storage quota exceeded - using CSV fallback)
-- **CSV Data Storage**: ✅ Working as fallback
+- **Browser Setup**: ✅ Working (for applications only)
+- **Google Sheets**: ✅ Working
+- **Job Discovery**: ✅ Powered by Apify (reliable & scalable)
 
 ## 📦 Quick Setup
 
@@ -34,14 +43,23 @@ pip install -r requirements.txt
 ```
 
 ### 2. Configure API Keys
-Copy `.env.example` to `.env` and fill in your credentials:
+Update your `.env` file with required credentials:
 ```bash
-cp .env.example .env
+# Required: Apify API Token
+APIFY_API_TOKEN=your_apify_token_here
+
+# Required: OpenAI API Key
+OPENAI_API_KEY=your_openai_key_here
+
+# Required: Google Service Account Credentials
+GOOGLE_PROJECT_ID=your_project_id
+GOOGLE_PRIVATE_KEY=your_private_key
+# ... other Google credentials
 ```
 
-### 3. Test Setup
+### 3. Test Apify Integration
 ```bash
-python test_setup.py
+python test_apify_integration.py
 ```
 
 ### 4. Run Job Automation
@@ -106,12 +124,13 @@ files = csv_manager.list_all_data_files()
 - Free up Google Drive storage or upgrade plan
 - System automatically uses CSV fallback
 
-#### 2. ChromeDriver Issues
-**Error**: ChromeDriver version cannot be discovered
+#### 2. Browser Setup (Optional)
+**Note**: Browser automation is optional - core features work without it
+**Error**: ChromeDriver issues
 **Solution**: 
-- Install latest Google Chrome
-- Run `python test_setup.py` to auto-download compatible driver
-- Check antivirus isn't blocking downloads
+- Browser automation is only used for optional automated form filling
+- Core features (Apify scraping, AI document generation, Google Sheets) work without browser
+- If needed: Install latest Google Chrome and ensure it's in your system PATH
 
 #### 3. Import Errors
 **Error**: Module not found errors

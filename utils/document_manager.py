@@ -117,6 +117,24 @@ class DocumentManager:
             # Fallback to GitHub Gist
             return self._create_github_gist(content, filename, doc_type, {})
     
+    def save_document(self, content, filename, doc_type='document', job_details=None):
+        """
+        Generic save document method for enhanced application processor
+        """
+        try:
+            if not job_details:
+                job_details = {}
+            
+            # Try AWS S3 first, fallback to GitHub Gist
+            if self.is_aws_environment and hasattr(self, 's3_client'):
+                return self._upload_to_s3(content, filename, doc_type)
+            else:
+                return self._create_github_gist(content, filename, doc_type, job_details)
+            
+        except Exception as e:
+            logger.error(f"Error saving document: {e}")
+            return f"Document save failed: {str(e)}"
+    
     def _create_github_gist(self, content, filename, doc_type, job_details):
         """Create GitHub Gist as fallback storage"""
         try:

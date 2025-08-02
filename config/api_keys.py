@@ -38,15 +38,17 @@ class APIKeys:
     # Make GOOGLE_CREDENTIALS accessible as a class attribute
     GOOGLE_CREDENTIALS = None  # Will be set after class definition
     
-    # LinkedIn API credentials (if needed)
-    LINKEDIN_CLIENT_ID = os.getenv('LINKEDIN_CLIENT_ID')
-    LINKEDIN_CLIENT_SECRET = os.getenv('LINKEDIN_CLIENT_SECRET')
+    # Apify API credentials - Used for LinkedIn and Indeed job scraping
+    APIFY_API_TOKEN = os.getenv('APIFY_API_TOKEN')
     
-    # GitHub token for Gist storage
+    # GitHub token for document storage
     GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
     
-    # Other job site API keys (add as needed)
-    NAUKRI_API_KEY = os.getenv('NAUKRI_API_KEY')
+    # Legacy API keys (kept for backward compatibility but not used with Apify)
+    # LINKEDIN_CLIENT_ID = os.getenv('LINKEDIN_CLIENT_ID')  # Not needed with Apify
+    # LINKEDIN_CLIENT_SECRET = os.getenv('LINKEDIN_CLIENT_SECRET')  # Not needed with Apify
+    # NAUKRI_API_KEY = os.getenv('NAUKRI_API_KEY')  # Not needed with Apify
+    # INDEED_API_KEY = os.getenv('INDEED_API_KEY')  # Not needed with Apify
     
     @staticmethod
     def validate_keys():
@@ -56,9 +58,12 @@ class APIKeys:
         if not APIKeys.OPENAI_API_KEY:
             missing_keys.append('OPENAI_API_KEY')
         
-        google_creds = APIKeys.GOOGLE_CREDENTIALS
+        if not APIKeys.APIFY_API_TOKEN:
+            missing_keys.append('APIFY_API_TOKEN')
+        
+        google_creds = APIKeys.get_google_credentials()
         if not google_creds or not google_creds.get('project_id'):
-            missing_keys.append('GOOGLE_PROJECT_ID')
+            missing_keys.append('GOOGLE_PROJECT_ID (and other Google credentials)')
         
         if missing_keys:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_keys)}")

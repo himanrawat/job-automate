@@ -5,7 +5,6 @@ Browser Configuration and Setup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 import logging
 import os
 
@@ -40,20 +39,15 @@ class BrowserManager:
                 chrome_options.binary_location = chrome_binary_path
                 logger.info(f"Using Chrome binary at: {chrome_binary_path}")
             
-            # Setup driver service with automatic driver management
+            # Setup driver service - simplified approach without WebDriver Manager
             try:
-                service = Service(ChromeDriverManager().install())
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                logger.info("ChromeDriver setup successful via webdriver-manager")
+                # Try with default ChromeDriver (expects it in PATH or uses local)
+                self.driver = webdriver.Chrome(options=chrome_options)
+                logger.info("ChromeDriver setup successful via default method")
             except Exception as e:
-                logger.warning(f"Failed to setup ChromeDriver via webdriver-manager: {e}")
-                # Fallback to default behavior
-                try:
-                    self.driver = webdriver.Chrome(options=chrome_options)
-                    logger.info("ChromeDriver setup successful via default method")
-                except Exception as e2:
-                    logger.error(f"Both ChromeDriver setup methods failed: {e2}")
-                    return None
+                logger.error(f"ChromeDriver setup failed: {e}")
+                logger.info("Note: Browser automation is optional. Core features (Apify scraping, document generation) will still work.")
+                return None
             
             # Stealth script
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")

@@ -211,6 +211,56 @@ class SheetsManager:
         except Exception as e:
             logger.error(f"Error updating spreadsheet for {region}: {e}")
     
+    def add_job_application_enhanced(self, job_data, region='INDIA'):
+        """
+        Add job application to tracking sheet - enhanced version
+        Compatible with enhanced application processor
+        """
+        try:
+            # Ensure we have the minimum required data
+            if not job_data:
+                logger.error("No job data provided")
+                return False
+            
+            # Normalize job data for enhanced processor compatibility
+            normalized_data = {
+                'title': job_data.get('title', ''),
+                'company': job_data.get('company', ''),
+                'location': job_data.get('location', ''),
+                'portal': job_data.get('platform', job_data.get('portal', '')),
+                'url': job_data.get('url', ''),
+                'application_status': job_data.get('status', 'Processed'),
+                'application_method': job_data.get('application_method', 'Enhanced Automation'),
+                'salary': job_data.get('salary', ''),
+                'recruiter_name': job_data.get('recruiter_name', ''),
+                'recruiter_contact': job_data.get('recruiter_contact', ''),
+                'recruiter_platform': job_data.get('recruiter_platform', ''),
+                'outreach_message': job_data.get('outreach_message', ''),
+                'notes': job_data.get('notes', ''),
+                'keywords': job_data.get('keywords', ''),
+                'match_score': job_data.get('priority_score', ''),
+                'next_action': job_data.get('next_action', ''),
+                'visa_sponsorship': job_data.get('visa_sponsorship', ''),
+                'job_type': job_data.get('job_type', 'Full-time'),
+                'direct_application_link': job_data.get('direct_application_link', ''),
+                'failure_reason': job_data.get('failure_reason', ''),
+                'suggested_approach': job_data.get('suggested_approach', ''),
+                'priority_level': job_data.get('priority_level', ''),
+                'resume_link': job_data.get('resume_link', ''),
+                'cover_letter_link': job_data.get('cover_letter_link', ''),
+                'estimated_time': job_data.get('estimated_time', '')
+            }
+            
+            # Use the existing add_job_application_manual method
+            self.add_job_application_manual(normalized_data, region)
+            
+            logger.info(f"Added job application: {normalized_data['title']} at {normalized_data['company']}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error adding job application: {e}")
+            return False
+
     def format_application_row(self, worksheet, row_number, job_data):
         """Apply conditional formatting to application row"""
         try:
@@ -242,3 +292,137 @@ class SheetsManager:
             
         except Exception as e:
             logger.error(f"Error formatting row: {e}")
+    
+    def add_job_application(self, job_data):
+        """
+        Add job application to tracking spreadsheet with country-specific tabs
+        This method is called by the enhanced application processor
+        """
+        try:
+            # Debug logging
+            logger.info(f"Processing job data: {job_data.get('title', 'No Title')} at {job_data.get('company', 'No Company')}")
+            logger.info(f"Location: {job_data.get('location', 'No Location')}")
+            
+            # Enhanced country/region detection
+            region = self._detect_country_region(job_data.get('location', ''))
+            logger.info(f"Detected region: {region}")
+            
+            # Create worksheet if it doesn't exist
+            if region not in self.region_sheets:
+                worksheet = self.create_region_worksheet(region)
+                if worksheet:
+                    self.region_sheets[region] = worksheet
+            
+            # Update the application row using existing method
+            self.update_application_row(region, job_data)
+            
+            logger.info(f"Successfully added job application to {region} sheet: {job_data.get('title', 'Job')} at {job_data.get('company', 'Company')}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error adding job application: {e}")
+            return False
+    
+    def _detect_country_region(self, location_str):
+        """
+        Enhanced country/region detection for creating appropriate tabs
+        """
+        if not location_str:
+            return "GLOBAL"
+        
+        location = location_str.upper().strip()
+        
+        # United States variations
+        if any(keyword in location for keyword in [
+            'USA', 'US', 'UNITED STATES', 'AMERICA', 'CALIFORNIA', 'TEXAS', 'NEW YORK', 
+            'FLORIDA', 'WASHINGTON', 'OREGON', 'ILLINOIS', 'MASSACHUSETTS', 'VIRGINIA',
+            'NORTH CAROLINA', 'GEORGIA', 'COLORADO', 'ARIZONA', 'NEVADA', 'UTAH',
+            'SAN FRANCISCO', 'LOS ANGELES', 'CHICAGO', 'HOUSTON', 'PHOENIX', 'PHILADELPHIA',
+            'SAN ANTONIO', 'SAN DIEGO', 'DALLAS', 'AUSTIN', 'SEATTLE', 'DENVER', 'BOSTON',
+            'NASHVILLE', 'PORTLAND', 'REMOTE, US', 'REMOTE - US', 'REMOTE (US)'
+        ]):
+            return "🇺🇸 USA"
+        
+        # Canada
+        elif any(keyword in location for keyword in [
+            'CANADA', 'CANADIAN', 'TORONTO', 'VANCOUVER', 'MONTREAL', 'OTTAWA', 'CALGARY',
+            'EDMONTON', 'QUEBEC', 'WINNIPEG', 'HALIFAX', 'ONTARIO', 'BRITISH COLUMBIA',
+            'ALBERTA', 'MANITOBA', 'SASKATCHEWAN', 'NOVA SCOTIA', 'NEW BRUNSWICK'
+        ]):
+            return "🇨🇦 CANADA"
+        
+        # United Kingdom
+        elif any(keyword in location for keyword in [
+            'UK', 'UNITED KINGDOM', 'BRITAIN', 'BRITISH', 'ENGLAND', 'LONDON', 'MANCHESTER',
+            'BIRMINGHAM', 'LEEDS', 'GLASGOW', 'SHEFFIELD', 'BRADFORD', 'LIVERPOOL',
+            'EDINBURGH', 'BRISTOL', 'CARDIFF', 'BELFAST', 'SCOTLAND', 'WALES', 'NORTHERN IRELAND'
+        ]):
+            return "🇬🇧 UK"
+        
+        # India
+        elif any(keyword in location for keyword in [
+            'INDIA', 'INDIAN', 'DELHI', 'MUMBAI', 'BANGALORE', 'BENGALURU', 'HYDERABAD',
+            'CHENNAI', 'KOLKATA', 'PUNE', 'AHMEDABAD', 'JAIPUR', 'SURAT', 'LUCKNOW',
+            'KANPUR', 'NAGPUR', 'GHAZIABAD', 'INDORE', 'THANE', 'BHOPAL', 'VISAKHAPATNAM',
+            'PATNA', 'VADODARA', 'GURGAON', 'GURUGRAM', 'NOIDA', 'FARIDABAD'
+        ]):
+            return "🇮🇳 INDIA"
+        
+        # Germany
+        elif any(keyword in location for keyword in [
+            'GERMANY', 'GERMAN', 'BERLIN', 'MUNICH', 'HAMBURG', 'COLOGNE', 'FRANKFURT',
+            'STUTTGART', 'DÜSSELDORF', 'DORTMUND', 'ESSEN', 'LEIPZIG', 'BREMEN', 'DRESDEN'
+        ]):
+            return "🇩🇪 GERMANY"
+        
+        # Netherlands
+        elif any(keyword in location for keyword in [
+            'NETHERLANDS', 'HOLLAND', 'DUTCH', 'AMSTERDAM', 'ROTTERDAM', 'THE HAGUE',
+            'UTRECHT', 'EINDHOVEN', 'TILBURG', 'GRONINGEN', 'ALMERE', 'BREDA'
+        ]):
+            return "🇳🇱 NETHERLANDS"
+        
+        # Australia
+        elif any(keyword in location for keyword in [
+            'AUSTRALIA', 'AUSTRALIAN', 'SYDNEY', 'MELBOURNE', 'BRISBANE', 'PERTH',
+            'ADELAIDE', 'GOLD COAST', 'NEWCASTLE', 'CANBERRA', 'WOLLONGONG', 'GEELONG'
+        ]):
+            return "🇦🇺 AUSTRALIA"
+        
+        # Singapore
+        elif any(keyword in location for keyword in [
+            'SINGAPORE', 'SINGAPOREAN'
+        ]):
+            return "🇸🇬 SINGAPORE"
+        
+        # Remote/Global positions
+        elif any(keyword in location for keyword in [
+            'REMOTE', 'WORLDWIDE', 'GLOBAL', 'ANYWHERE', 'DISTRIBUTED', 'VIRTUAL'
+        ]):
+            return "🌍 REMOTE/GLOBAL"
+        
+        # European Union (general)
+        elif any(keyword in location for keyword in [
+            'EUROPE', 'EUROPEAN', 'EU', 'FRANCE', 'SPAIN', 'ITALY', 'POLAND', 
+            'SWEDEN', 'NORWAY', 'DENMARK', 'FINLAND', 'BELGIUM', 'AUSTRIA', 'SWITZERLAND'
+        ]):
+            return "🇪🇺 EUROPE"
+        
+        # Default fallback - be more specific about what goes to GLOBAL
+        else:
+            # If we have a location but couldn't match it, use first 20 chars as region
+            if location and len(location.strip()) > 0:
+                return f"🌎 {location[:20]}"  # Use first 20 chars of location as region name
+            else:
+                return "🌍 GLOBAL"  # Only truly unknown locations go here
+    
+    def log_application(self, job_data, application_result):
+        """Log application with result details - compatibility method"""
+        try:
+            # Use existing add_job_application method
+            success = self.add_job_application(job_data)
+            logger.info(f"Application logged: {job_data.get('title')} at {job_data.get('company')} - Success: {success}")
+            return success
+        except Exception as e:
+            logger.error(f"Error logging application: {e}")
+            return False
