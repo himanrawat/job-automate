@@ -38,16 +38,25 @@ class HimanshuJobAutomator:
         self.document_manager = DocumentManager()
         self.sheets_manager = SheetsManager()
         self.applications_today = 0
+        self.driver = None
+        self.linkedin_scraper = None
+        self.naukri_scraper = None
+        self.application_handler = None
         
-        # Setup browser
-        self.driver = self.browser_manager.setup_browser()
-        
-        # Initialize scrapers
-        self.linkedin_scraper = LinkedInScraper(self.driver)
-        self.naukri_scraper = NaukriScraper(self.driver)
-        
-        # Initialize application handler
-        self.application_handler = ApplicationHandler(self.driver)
+        # Setup browser with error handling
+        try:
+            self.driver = self.browser_manager.setup_browser()
+            if self.driver:
+                # Initialize scrapers only if browser is available
+                self.linkedin_scraper = LinkedInScraper(self.driver)
+                self.naukri_scraper = NaukriScraper(self.driver)
+                self.application_handler = ApplicationHandler(self.driver)
+                logger.info("All components initialized successfully")
+            else:
+                logger.error("Browser setup failed - scrapers will not be available")
+        except Exception as e:
+            logger.error(f"Error during initialization: {e}")
+            self.driver = None
         
     def get_regional_portals(self, region):
         """Get job portals for specific region"""
@@ -111,6 +120,11 @@ class HimanshuJobAutomator:
         locations = portal_config['locations']
         all_job_links = []
         
+        # Check if browser and scrapers are available
+        if not self.driver:
+            logger.error(f"Browser not available - skipping {portal_name}")
+            return []
+        
         for location in locations[:3]:  # Limit to 3 locations per portal
             try:
                 search_url = portal_config['search_url'].format(
@@ -123,12 +137,15 @@ class HimanshuJobAutomator:
                 time.sleep(5)
                 
                 # Get job links based on portal
-                if 'linkedin' in portal_name.lower():
+                if 'linkedin' in portal_name.lower() and self.linkedin_scraper:
                     job_links = self.linkedin_scraper.get_job_links()
-                elif 'naukri' in portal_name.lower():
+                elif 'naukri' in portal_name.lower() and self.naukri_scraper:
                     job_links = self.naukri_scraper.get_job_links()
-                else:
+                elif self.linkedin_scraper:
                     job_links = self.linkedin_scraper.get_job_links()  # Default to LinkedIn scraper
+                else:
+                    logger.warning(f"No suitable scraper available for {portal_name}")
+                    job_links = []
                 
                 all_job_links.extend(job_links[:JobPreferences.MAX_APPLICATIONS_PER_PORTAL//len(locations)])
                 time.sleep(10)

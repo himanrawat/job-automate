@@ -1,13 +1,16 @@
 """
 Google Sheets Management for Job Application Tracking
+With CSV fallback when Google Sheets is unavailable
 """
 
 import logging
+import os
 from datetime import datetime, timedelta
 import gspread
 from google.oauth2.service_account import Credentials
 from config.api_keys import APIKeys
 from config.user_profile import HimanshuProfile
+from utils.csv_data_manager import CSVDataManager
 import tempfile
 import json
 
@@ -15,18 +18,33 @@ logger = logging.getLogger(__name__)
 
 class SheetsManager:
     def __init__(self):
+        self.spreadsheet = None
+        self.gc = None
+        self.csv_manager = CSVDataManager()  # Fallback CSV manager
+        self.using_csv_fallback = False
         self.setup_sheets()
         self.region_sheets = {}
         
     def setup_sheets(self):
         """Setup Google Sheets API"""
         try:
+            # Get properly formatted credentials
+            credentials_dict = APIKeys.get_google_credentials()
+            
+            # Validate credentials
+            if not credentials_dict.get('project_id') or not credentials_dict.get('private_key'):
+                raise ValueError("Missing required Google credentials")
+            
             # Create temporary credentials file
             with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-                json.dump(APIKeys.GOOGLE_CREDENTIALS, f)
+                json.dump(credentials_dict, f)
                 creds_path = f.name
                 
-            scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+            scope = [
+                'https://spreadsheets.google.com/feeds', 
+                'https://www.googleapis.com/auth/drive',
+                'https://www.googleapis.com/auth/spreadsheets'
+            ]
             creds = Credentials.from_service_account_file(creds_path, scopes=scope)
             self.gc = gspread.authorize(creds)
             
@@ -35,17 +53,40 @@ class SheetsManager:
                 self.spreadsheet = self.gc.open("Himanshu Rawat - Job Applications Tracker")
             except gspread.SpreadsheetNotFound:
                 self.spreadsheet = self.gc.create("Himanshu Rawat - Job Applications Tracker")
-                self.spreadsheet.share(HimanshuProfile.PERSONAL_INFO['email'], perm_type='user', role='owner')
-                self.spreadsheet.share('officialhimanshurawat@gmail.com', perm_type='user', role='writer')
+                # Make it accessible to the service account
+                self.spreadsheet.share(credentials_dict['client_email'], perm_type='user', role='owner')
+                # Share with personal email if available
+                if HimanshuProfile.PERSONAL_INFO.get('email'):
+                    self.spreadsheet.share(HimanshuProfile.PERSONAL_INFO['email'], perm_type='user', role='writer')
             
-            logger.info("Google Sheets setup completed")
+            # Clean up temp file
+            os.unlink(creds_path)
+            
+            logger.info("Google Sheets setup completed successfully")
             
         except Exception as e:
             logger.error(f"Error setting up Google Sheets: {e}")
+            # Set spreadsheet to None and enable CSV fallback
+            self.spreadsheet = None
+            self.using_csv_fallback = True
+            logger.info("Switched to CSV fallback mode due to Google Sheets error")
     
     def create_region_worksheet(self, region_name):
         """Create worksheet for specific region"""
         try:
+            if self.using_csv_fallback:
+                # Use CSV fallback
+                csv_file = self.csv_manager.create_region_csv(region_name)
+                if csv_file:
+                    self.region_sheets[region_name] = {'type': 'csv', 'file': csv_file}
+                    logger.info(f"Using CSV fallback for {region_name}: {csv_file}")
+                    return csv_file
+                return None
+            
+            if not self.spreadsheet:
+                logger.error("Spreadsheet not initialized - cannot create worksheet")
+                return None
+                
             worksheet_name = f"{region_name}_{datetime.now().strftime('%Y_%m')}"
             
             try:
@@ -82,6 +123,42 @@ class SheetsManager:
     def update_application_row(self, region, job_data):
         """Update spreadsheet with comprehensive job application data"""
         try:
+            if self.using_csv_fallback:
+                # Use CSV fallback
+                csv_data = {
+                    'date_applied': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'job_title': job_data.get('title', ''),
+                    'company': job_data.get('company', ''),
+                    'location': job_data.get('location', ''),
+                    'portal': job_data.get('portal', ''),
+                    'job_url': job_data.get('url', ''),
+                    'applied_status': job_data.get('application_status', ''),
+                    'application_method': job_data.get('application_method', ''),
+                    'salary_range': job_data.get('salary', ''),
+                    'recruiter_name': job_data.get('recruiter_name', ''),
+                    'recruiter_contact': job_data.get('recruiter_contact', ''),
+                    'recruiter_platform': job_data.get('recruiter_platform', ''),
+                    'priority': job_data.get('priority_level', ''),
+                    'required_skills': job_data.get('keywords', ''),
+                    'experience_level': job_data.get('experience_level', ''),
+                    'employment_type': job_data.get('job_type', 'Full-time'),
+                    'industry': job_data.get('industry', ''),
+                    'company_size': job_data.get('company_size', ''),
+                    'remote_work': job_data.get('remote_work', ''),
+                    'application_response': 'Pending',
+                    'interview_status': '',
+                    'follow_up_date': (datetime.now() + timedelta(days=3)).strftime('%Y-%m-%d'),
+                    'notes': job_data.get('notes', ''),
+                    'cover_letter_used': job_data.get('cover_letter_link', ''),
+                    'resume_version': job_data.get('resume_link', '')
+                }
+                
+                success = self.csv_manager.add_job_application(region, csv_data)
+                if success:
+                    logger.info(f"Added job to CSV: {job_data.get('title', 'job')} at {job_data.get('company', 'company')}")
+                return
+            
+            # Original Google Sheets logic
             worksheet = self.region_sheets.get(region)
             if not worksheet:
                 worksheet = self.create_region_worksheet(region)
